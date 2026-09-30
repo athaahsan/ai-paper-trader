@@ -3,7 +3,7 @@ import { supabase, SESSION_TABLE, RUN_TABLE, configurationError } from '../lib/s
 import { costTotals } from '../lib/portfolio'
 
 const sessionFields = 'id,started_at,symbol,timeframe,initial_cash_usdt,initial_btc,probability_threshold,min_trade_fraction,max_trade_fraction,minimum_trade_usdt,fee_rate'
-const runFields = 'id,session_id,candle_close_at,model_id,indicators,buy_probability,sell_probability,selected_signal,action,market,mark_price,quote_observed_at,cash_before,btc_before,cash_after,btc_after,trade_fraction,skip_reason,error_code,fill_price,quantity_btc,notional_usdt,fee_rate,fee_asset,fee_amount,fee_equivalent_usdt,openrouter_cost_usd'
+const runFields = 'id,session_id,candle_close_at,recorded_at,model_id,indicators,buy_probability,sell_probability,selected_signal,action,market,mark_price,quote_observed_at,cash_before,btc_before,cash_after,btc_after,trade_fraction,skip_reason,error_code,fill_price,quantity_btc,notional_usdt,fee_rate,fee_asset,fee_amount,fee_equivalent_usdt,openrouter_cost_usd'
 const costFields = 'candle_close_at,fee_equivalent_usdt,openrouter_cost_usd'
 const initial = { session: null, latest: null, firstValuation: null, runs: [], costs: null, totalInRange: 0, syncedAt: null, loading: true, error: null }
 
@@ -58,8 +58,8 @@ export function useTrader(hours) {
         const since = new Date(Date.now() - hours * 3600000).toISOString()
         const [latestResult, firstResult, rangeResult] = await Promise.all([
           supabase.from(RUN_TABLE).select(runFields).eq('session_id', session.id).order('candle_close_at', { ascending: false }).limit(1).abortSignal(signal),
-          supabase.from(RUN_TABLE).select('mark_price,candle_close_at,quote_observed_at').eq('session_id', session.id).not('mark_price', 'is', null).order('candle_close_at', { ascending: true }).limit(1).abortSignal(signal),
-          supabase.from(RUN_TABLE).select(runFields, { count: 'exact' }).eq('session_id', session.id).gte('candle_close_at', since).order('candle_close_at', { ascending: false }).range(0, 499).abortSignal(signal),
+          supabase.from(RUN_TABLE).select('mark_price,candle_close_at,quote_observed_at,recorded_at').eq('session_id', session.id).not('mark_price', 'is', null).order('candle_close_at', { ascending: true }).limit(1).abortSignal(signal),
+          supabase.from(RUN_TABLE).select(runFields, { count: 'exact' }).eq('session_id', session.id).gte('recorded_at', since).order('candle_close_at', { ascending: false }).range(0, 499).abortSignal(signal),
         ])
         const latest = checked(latestResult)[0] || null
         const firstValuation = checked(firstResult)[0] || null
@@ -68,7 +68,7 @@ export function useTrader(hours) {
         const costs = await sessionCosts(session.id, latest, signal)
         while (runs.length < Math.min(totalInRange, 5000)) {
           const page = checked(await supabase.from(RUN_TABLE).select(runFields)
-            .eq('session_id', session.id).gte('candle_close_at', since)
+            .eq('session_id', session.id).gte('recorded_at', since)
             .lt('candle_close_at', runs[runs.length - 1].candle_close_at)
             .order('candle_close_at', { ascending: false }).limit(500).abortSignal(signal))
           if (!page.length) break

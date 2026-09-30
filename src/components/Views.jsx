@@ -1,9 +1,9 @@
 import { CircleHelp, Code2, Database, ShieldCheck, SlidersHorizontal, Zap } from 'lucide-react'
-import { amount, dateTime, money, number } from '../lib/portfolio'
+import { amount, candleStatus, dateTime, inputTime, modelInputs, money, number } from '../lib/portfolio'
 import { Empty } from './Panels'
 
 const indicatorLabels = {
-  price_last_14: ['Recent closing prices', 'Last 14 completed candles'],
+  price_last_14: ['Recent candle prices', 'Last 14 completed candles'],
   ema_20: ['EMA · 20', '20-period exponential moving average'], ema_50: ['EMA · 50', '50-period exponential moving average'], ema_100: ['EMA · 100', '100-period exponential moving average'],
   price_vs_ema20_percent: ['Price vs. EMA 20', 'Distance from the 20-period EMA (%)'], price_vs_ema50_percent: ['Price vs. EMA 50', 'Distance from the 50-period EMA (%)'], price_vs_ema100_percent: ['Price vs. EMA 100', 'Distance from the 100-period EMA (%)'],
   rsi_14_last_7: ['RSI · 14', 'Last 7 readings, oldest to newest'], macd_histogram_12_26_9_last_7: ['MACD histogram · 12 / 26 / 9', 'Last 7 readings, oldest to newest'],
@@ -13,12 +13,13 @@ const indicatorLabels = {
 }
 
 export function Indicators({ run, session, onDetails }) {
-  const indicators = run?.indicators || {}
+  const indicators = modelInputs(run)
   const timeframe = indicators.timeframe || session?.timeframe
-  return <><div className="section-intro"><span><Database size={15} />{run ? `Candle closed ${dateTime(run.candle_close_at)} UTC` : 'Waiting for market inputs'}</span><span>{timeframe ? `${timeframe} candles` : 'Timeframe unavailable'} · {indicators.instrument || session?.symbol || '—'}</span></div>
+  const forming = run?.indicators?.last_candle_is_closed === false
+  return <><div className="section-intro"><span><Database size={15} />{run ? `${run.indicators?.snapshot_at ? 'Snapshot captured' : 'Candle closed'} ${dateTime(inputTime(run))} UTC` : 'Waiting for market inputs'}</span><span>{timeframe ? `${timeframe} candles` : 'Timeframe unavailable'} · {indicators.instrument || session?.symbol || '—'}</span>{run && <span>{candleStatus(run)}</span>}</div>
     {!Object.keys(indicators).length ? <section className="panel"><Empty title="No model inputs yet" icon={SlidersHorizontal}>The exact indicator values sent to the model will appear after a recorded run.</Empty></section> : <div className="indicators-grid">{Object.entries(indicatorLabels).map(([key, [label, description]]) => {
       const value = indicators[key], series = Array.isArray(value)
-      return <section className={`panel indicator-card ${series ? 'series-card' : ''}`} key={key}><span className="eyebrow">{label}</span><strong>{amount(series ? value[value.length - 1] : value, 4)}</strong><p>{description}</p>{series && <div className="series-values">{value.map((item, index) => <span key={index}>{amount(item, 4)}</span>)}</div>}</section>
+      return <section className={`panel indicator-card ${series ? 'series-card' : ''}`} key={key}><span className="eyebrow">{label}</span><strong>{amount(series ? value[value.length - 1] : value, 4)}</strong><p>{key === 'price_last_14' && forming ? 'Last 14 candles · final candle forming at capture' : description}</p>{series && <div className="series-values">{value.map((item, index) => <span key={index}>{amount(item, 4)}</span>)}</div>}</section>
     })}</div>}
     {run && <button className="subtle-button raw-button" onClick={() => onDetails(run)}><Code2 size={15} /> View recorded payload</button>}
   </>
@@ -28,7 +29,7 @@ export function Strategy({ session, run }) {
   const threshold = number(session?.probability_threshold)
   const min = number(session?.min_trade_fraction), max = number(session?.max_trade_fraction)
   return <div className="strategy-grid"><section className="panel strategy-flow"><div className="panel-heading"><h2>How a decision becomes a trade</h2><Zap size={17} /></div>{[
-    ['01', 'Read the market', session?.timeframe ? `Google Apps Script calculates indicators from completed ${session.timeframe} Binance spot candles.` : 'Google Apps Script fetches Binance spot candles and calculates indicators from completed candles.'],
+    ['01', 'Read the market', `Google Apps Script calculates indicators from ${session?.timeframe ? `${session.timeframe} ` : ''}Binance spot candles, including the current forming candle at capture time.`],
     ['02', 'Ask the model', 'The model receives the indicators and returns two probabilities: buy and sell.'],
     ['03', 'Check confidence', threshold === null ? 'The session defines the minimum confidence required to trade.' : `A signal must reach ${(threshold * 100).toFixed(0)}% confidence. Otherwise, the portfolio holds.`],
     ['04', 'Size and record', min === null || max === null ? 'Qualifying trades use the sizing rules saved with the session.' : `A qualifying signal uses ${(min * 100).toFixed(0)}–${(max * 100).toFixed(0)}% of available cash for a buy, or BTC holdings for a sell. Higher confidence means a larger trade.`],

@@ -197,7 +197,7 @@ select { font-size: 11px; background: #1c1f24; border: 1px solid #353a43; paddin
 .filter-tabs button:hover:not(.active) { background: #252931; }
 .table-toolbar > span { font-size: 10px; white-space: nowrap; }
 .pagination { display: flex; align-items: center; gap: 12px; }
-.section-intro { display: flex; justify-content: space-between; gap: 10px; color: #9aa1ad; font-size: 11px; margin: 27px 0 23px; }
+.section-intro { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; color: #9aa1ad; font-size: 11px; margin: 27px 0 23px; }
 .section-intro > span:first-child { display: flex; align-items: center; gap: 8px; }
 .indicators-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; }
 .indicator-card { padding: 22px; }

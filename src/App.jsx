@@ -5,7 +5,7 @@ import { ActivityTable, Allocation, Decision, Stat } from './components/Panels'
 import RunDetails from './components/RunDetails'
 import { Indicators, Strategy } from './components/Views'
 import { useClock, useMarket, useTrader } from './hooks/useTrader'
-import { age, amount, apiCost, equityPoints, isRunStale, money, number, percent, portfolio } from './lib/portfolio'
+import { age, amount, apiCost, equityPoints, isRunStale, modelInputs, money, number, percent, portfolio, runTime } from './lib/portfolio'
 import './App.css'
 
 const navigation = [
@@ -31,13 +31,13 @@ export default function App() {
   const now = useClock()
   const { session, latest, runs, costs } = trader
   const recorded = [latest, ...runs].find(run => number(run?.mark_price) > 0)
-  const quote = market.quote || (recorded ? { price: number(recorded.mark_price), receivedAt: Date.parse(recorded.quote_observed_at || recorded.candle_close_at) } : null)
+  const quote = market.quote || (recorded ? { price: number(recorded.mark_price), receivedAt: Date.parse(runTime(recorded)) } : null)
   const fresh = market.quote && !market.error && now - market.quote.receivedAt < 30000
   const values = portfolio(session, latest, trader.firstValuation, quote)
   const points = equityPoints(runs)
-  if (values.equity !== null && fresh && (!points.length || market.quote.receivedAt > points[points.length - 1].time) && (!latest || now - Date.parse(latest.candle_close_at) <= hours * 3600000)) points.push({ time: market.quote.receivedAt, value: values.equity, live: true })
+  if (values.equity !== null && fresh && (!points.length || market.quote.receivedAt > points[points.length - 1].time) && (!latest || now - Date.parse(runTime(latest)) <= hours * 3600000)) points.push({ time: market.quote.receivedAt, value: values.equity, live: true })
   const trades = runs.filter(run => run.action === 'BUY' || run.action === 'SELL')
-  const currentInputs = runs.find(run => Object.keys(run.indicators || {}).length) || (Object.keys(latest?.indicators || {}).length ? latest : null)
+  const currentInputs = runs.find(run => Object.keys(modelInputs(run)).length) || (Object.keys(modelInputs(latest)).length ? latest : null)
   const stale = isRunStale(latest, session, now)
   const pnlTone = values.pnl === null ? '' : values.pnl >= 0 ? 'positive' : 'negative'
   const go = next => { setView(next); setMenu(false); window.scrollTo({ top: 0, behavior: 'smooth' }) }

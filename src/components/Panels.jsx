@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Activity, ArrowDownLeft, ArrowRight, ArrowUpRight, Bitcoin, ChevronLeft, ChevronRight, Clock3, Download, Layers3, Zap } from 'lucide-react'
-import { age, amount, dateTime, isRunStale, money, number, reasonLabels } from '../lib/portfolio'
+import { age, amount, dateTime, isRunStale, money, number, reasonLabels, runTime } from '../lib/portfolio'
 
 export function Badge({ action }) { return <span className={`badge ${String(action || 'waiting').toLowerCase()}`}>{action || 'WAITING'}</span> }
 export function Empty({ title, children, icon: Icon = Activity }) { return <div className="empty"><Icon size={30} strokeWidth={1.2} /><h3>{title}</h3><p>{children}</p></div> }
@@ -20,7 +20,7 @@ export function Decision({ run, session, now, onDetails }) {
     <div className="confidence-bars">{[['Buy', buy], ['Sell', sell]].map(([label, value]) => <div className="confidence-row" key={label}><div><span>{label}</span><strong>{value === null ? '—' : `${(value * 100).toFixed(1)}%`}</strong></div><div className="confidence-track"><span className={label.toLowerCase()} style={{ width: `${(value ?? 0) * 100}%` }} />{threshold !== null && <i style={{ left: `${threshold * 100}%` }} title={`${threshold * 100}% threshold`} />}</div></div>)}</div>
     <div className="threshold-note"><span className="threshold-mark" />{threshold === null ? 'Confidence threshold set by session' : `${amount(threshold * 100, 0)}% required to trade`}</div>
     <div className="decision-result"><div><span className="muted">Outcome</span><Badge action={run?.action} /></div><p>{text}</p></div>
-    <button className="decision-footer" onClick={() => run && onDetails(run)} disabled={!run}><span><Clock3 size={13} />{age(run?.candle_close_at, now)}{old ? ' · Awaiting update' : ''}</span><ArrowRight size={15} /></button>
+    <button className="decision-footer" onClick={() => run && onDetails(run)} disabled={!run}><span><Clock3 size={13} />{age(runTime(run), now)}{old ? ' · Awaiting update' : ''}</span><ArrowRight size={15} /></button>
   </section>
 }
 
@@ -34,9 +34,13 @@ export function Allocation({ values }) {
 }
 
 function exportRuns(runs) {
-  const fields = ['candle_close_at', 'action', 'selected_signal', 'buy_probability', 'sell_probability', 'fill_price', 'quantity_btc', 'notional_usdt', 'fee_asset', 'fee_amount', 'fee_equivalent_usdt', 'openrouter_cost_usd', 'cash_after', 'btc_after', 'model_id', 'skip_reason', 'error_code']
+  const fields = ['decision_at', 'recorded_at', 'quote_observed_at', 'snapshot_at', 'candle_open_at', 'candle_close_at', 'last_candle_is_closed', 'action', 'selected_signal', 'buy_probability', 'sell_probability', 'fill_price', 'quantity_btc', 'notional_usdt', 'fee_asset', 'fee_amount', 'fee_equivalent_usdt', 'openrouter_cost_usd', 'cash_after', 'btc_after', 'model_id', 'skip_reason', 'error_code']
   const escape = value => { const text = String(value ?? ''); return `"${(/^[=+@-]/.test(text) ? "'" + text : text).replaceAll('"', '""')}"` }
-  const text = [fields.join(','), ...runs.map(run => fields.map(field => escape(run[field])).join(','))].join('\r\n')
+  const text = [fields.join(','), ...runs.map(run => {
+    const record = { ...run, decision_at: runTime(run), snapshot_at: run.indicators?.snapshot_at,
+      candle_open_at: run.indicators?.candle_open_at, last_candle_is_closed: run.indicators?.last_candle_is_closed }
+    return fields.map(field => escape(record[field])).join(',')
+  })].join('\r\n')
   const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8;' }))
   const link = document.createElement('a'); link.href = url; link.download = 'trading-decisions.csv'; link.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
@@ -52,10 +56,10 @@ export function ActivityTable({ runs, compact, loading, hours, onDetails, onView
   const shown = compact ? filtered.slice(0, size) : filtered.slice(current * size, (current + 1) * size)
   return <section className="panel activity-panel"><div className="panel-heading"><div className="heading-with-count"><h2>{compact ? 'Recent activity' : 'All decisions'}</h2><span className="count-label">{runs.length}</span></div>{compact ? <button className="text-button" onClick={onViewAll}>View all <ArrowRight size={14} /></button> : <button className="subtle-button" disabled={!filtered.length} onClick={() => exportRuns(filtered)}><Download size={14} /> Export CSV</button>}</div>
     {!compact && <div className="table-toolbar"><div className="filter-tabs" aria-label="Filter decisions">{['ALL', 'BUY', 'SELL', 'HOLD', 'SKIP', 'ERROR'].map(action => <button aria-pressed={filter === action} className={filter === action ? 'active' : ''} key={action} onClick={() => { setFilter(action); setPage(0) }}>{action === 'ALL' ? 'All activity' : action[0] + action.slice(1).toLowerCase()}</button>)}</div><span className="muted">Last {hours === 168 ? '7 days' : `${hours} hours`}</span></div>}
-    {!shown.length ? <Empty title={loading ? 'Loading decisions…' : filter === 'ALL' ? 'No decisions in this period' : `No ${filter.toLowerCase()} decisions`}>{loading ? 'Reading the trading journal.' : 'Recorded decisions will appear here, including holds and skipped trades.'}</Empty> : <div className="table-scroll"><table><thead><tr><th>Candle close <span>UTC</span></th><th>Action</th><th>Confidence</th><th>BTC quantity</th><th>Fill price</th><th>Value <span>USDT</span></th><th><span className="sr-only">Details</span></th></tr></thead><tbody>{shown.map(run => {
+    {!shown.length ? <Empty title={loading ? 'Loading decisions…' : filter === 'ALL' ? 'No decisions in this period' : `No ${filter.toLowerCase()} decisions`}>{loading ? 'Reading the trading journal.' : 'Recorded decisions will appear here, including holds and skipped trades.'}</Empty> : <div className="table-scroll"><table><thead><tr><th>Decision time <span>UTC</span></th><th>Action</th><th>Confidence</th><th>BTC quantity</th><th>Fill price</th><th>Value <span>USDT</span></th><th><span className="sr-only">Details</span></th></tr></thead><tbody>{shown.map(run => {
       const buy = number(run.buy_probability), sell = number(run.sell_probability)
       const confidence = buy !== null && sell !== null ? Math.max(buy, sell) * 100 : null
-      return <tr key={run.id || run.candle_close_at}><td className="time-cell">{dateTime(run.candle_close_at)}</td><td><Badge action={run.action} /></td><td>{confidence === null ? '—' : `${confidence.toFixed(1)}%`}</td><td>{amount(run.quantity_btc)}</td><td>{money(run.fill_price)}</td><td>{money(run.notional_usdt)}</td><td><button className="icon-button row-open" aria-label={`View ${run.action} decision at ${dateTime(run.candle_close_at)} UTC`} onClick={() => onDetails(run)}><ArrowUpRight size={17} /></button></td></tr>
+      return <tr key={run.id || run.candle_close_at}><td className="time-cell">{dateTime(runTime(run))}</td><td><Badge action={run.action} /></td><td>{confidence === null ? '—' : `${confidence.toFixed(1)}%`}</td><td>{amount(run.quantity_btc)}</td><td>{money(run.fill_price)}</td><td>{money(run.notional_usdt)}</td><td><button className="icon-button row-open" aria-label={`View ${run.action} decision at ${dateTime(runTime(run))} UTC`} onClick={() => onDetails(run)}><ArrowUpRight size={17} /></button></td></tr>
     })}</tbody></table></div>}
     <div className="table-footer"><span>{compact ? `Latest decisions · ${hours === 168 ? '7-day' : `${hours}-hour`} view` : `${filtered.length ? current * size + 1 : 0}–${Math.min((current + 1) * size, filtered.length)} of ${filtered.length} decisions`}</span>{compact ? <span><span className="small-circle" /> Recorded by Google Apps Script</span> : <div className="pagination"><button className="icon-button" disabled={current === 0} onClick={() => setPage(current - 1)} aria-label="Previous page"><ChevronLeft size={16} /></button><span>{current + 1} / {pageCount}</span><button className="icon-button" disabled={current + 1 >= pageCount} onClick={() => setPage(current + 1)} aria-label="Next page"><ChevronRight size={16} /></button></div>}</div>
   </section>

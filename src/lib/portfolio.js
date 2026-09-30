@@ -63,14 +63,39 @@ export function age(value, now) {
   return `${Math.floor(seconds / 86400)}d ago`
 }
 
+function firstTimestamp(...values) {
+  return values.find(value => typeof value === 'string' && Number.isFinite(Date.parse(value)))
+}
+
+// Candle end identifies an interval; snapshots may be captured before that end.
+export function runTime(run) {
+  return firstTimestamp(run?.quote_observed_at, run?.recorded_at, run?.indicators?.snapshot_at,
+    run?.indicators?.last_candle_is_closed === false ? null : run?.candle_close_at)
+}
+
+export function inputTime(run) {
+  return firstTimestamp(run?.indicators?.snapshot_at,
+    run?.indicators?.last_candle_is_closed === false ? null : run?.candle_close_at, runTime(run))
+}
+
+export function candleStatus(run) {
+  return run?.indicators?.last_candle_is_closed === false ? 'Forming at snapshot' : 'Completed candles'
+}
+
+// These saved metadata fields are not sent to the model by the GAS.
+export function modelInputs(run) {
+  return Object.fromEntries(Object.entries(run?.indicators || {}).filter(([key]) =>
+    !['snapshot_at', 'candle_open_at', 'last_candle_is_closed'].includes(key)))
+}
+
 export function isRunStale(run, session, now) {
   if (!run) return false
   const timeframe = session?.timeframe || run.indicators?.timeframe
   const match = /^([1-9]\d*)([mhd])$/.exec(timeframe || '')
-  const closedAt = Date.parse(run.candle_close_at)
-  if (!match || !Number.isFinite(closedAt)) return true
+  const observedAt = Date.parse(runTime(run))
+  if (!match || !Number.isFinite(observedAt)) return true
   const unit = { m: 60000, h: 3600000, d: 86400000 }[match[2]]
-  return now - closedAt > Number(match[1]) * unit * 2
+  return now - observedAt > Number(match[1]) * unit * 2
 }
 
 export const reasonLabels = {
@@ -108,7 +133,7 @@ export function portfolio(session, latest, firstValuation, quote) {
 export function equityPoints(runs) {
   return [...runs].reverse().flatMap(run => {
     const cash = number(run.cash_after), btc = number(run.btc_after), price = number(run.mark_price)
-    const time = Date.parse(run.quote_observed_at || run.candle_close_at)
+    const time = Date.parse(runTime(run))
     if (cash === null || btc === null || (btc !== 0 && price === null) || !Number.isFinite(time)) return []
     return [{ time, value: cash + btc * (price ?? 0), action: run.action }]
   }).sort((a, b) => a.time - b.time)
