@@ -22,3 +22,11 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local Netlify folder
+.netlify
+
+# Local environment values
+.env
+.env.*
+!.env.example
